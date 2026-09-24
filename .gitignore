@@ -1,0 +1,25 @@
+# Build output
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CMakeUserPresets.json
+
+# yt-dlp is fetched, not committed
+bin/yt-dlp.exe
+
+# Local IDE / editor state
+.vscode/
+.vs/
+.idea/
+
+# Compiled objects
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exp
+
+# OS junk
+Thumbs.db
+Desktop.ini
