@@ -11,6 +11,9 @@ bin/yt-dlp.exe
 # Downloaded test media
 testout/
 
+# Release staging + zip
+dist/
+
 # Local IDE / editor state
 .vscode/
 .vs/
