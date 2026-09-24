@@ -14,6 +14,19 @@ testout/
 # Release staging + zip
 dist/
 
+# Interne / lokale Doku — nie auf GitHub
+STATUS.md
+NOTES.md
+NOTES_*.md
+TODO.md
+TODO_*.md
+INTERNAL.md
+INTERNAL_*.md
+_local/
+_internal/
+.local/
+.internal/
+
 # Local IDE / editor state
 .vscode/
 .vs/
