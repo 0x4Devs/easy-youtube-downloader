@@ -8,6 +8,9 @@ CMakeUserPresets.json
 # yt-dlp is fetched, not committed
 bin/yt-dlp.exe
 
+# Downloaded test media
+testout/
+
 # Local IDE / editor state
 .vscode/
 .vs/
