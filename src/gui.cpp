@@ -33,6 +33,7 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QProcess>
@@ -50,6 +51,100 @@
 #include <QVBoxLayout>
 #include <QVariantAnimation>
 #include <QWidget>
+
+// ==================== AnimatedProgressBar ==============================
+// Grosser gerundeter Balken mit rotem Farbverlauf, zentrierter Prozentzahl
+// (weiss + subtiler Schatten) und einem hellen Shimmer-Highlight das von links
+// nach rechts wandert waehrend der Download laeuft.
+
+class AnimatedProgressBar : public QProgressBar {
+    Q_OBJECT
+public:
+    AnimatedProgressBar(QWidget* parent = nullptr) : QProgressBar(parent) {
+        setTextVisible(false);
+        setMinimumHeight(36);
+        setMaximumHeight(36);
+        shimmer_timer_ = new QTimer(this);
+        shimmer_timer_->setInterval(16);      // ~60 FPS
+        connect(shimmer_timer_, &QTimer::timeout, this, [this]{
+            shimmer_phase_ += 0.012;
+            if (shimmer_phase_ > 1.4) shimmer_phase_ = -0.4;
+            update();
+        });
+    }
+
+    void setAnimated(bool on) {
+        if (on == animated_) return;
+        animated_ = on;
+        if (on) shimmer_timer_->start();
+        else    { shimmer_timer_->stop(); shimmer_phase_ = -0.4; update(); }
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        const qreal radius = std::min<qreal>(10.0, r.height() / 2.0);
+
+        // Hintergrund.
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0x1B, 0x1F, 0x27));
+        p.drawRoundedRect(r, radius, radius);
+
+        double pct = (maximum() > 0) ? double(value()) / double(maximum()) : 0.0;
+        if (pct < 0.0) pct = 0.0;
+        if (pct > 1.0) pct = 1.0;
+
+        if (pct > 0.0) {
+            const qreal chunk_w = r.width() * pct;
+            QRectF chunk = r;
+            chunk.setWidth(chunk_w);
+
+            // Roter Farbverlauf.
+            QLinearGradient grad(chunk.topLeft(), chunk.bottomLeft());
+            grad.setColorAt(0.0, QColor(0xEF, 0x44, 0x44));
+            grad.setColorAt(1.0, QColor(0xB9, 0x1C, 0x1C));
+            p.setBrush(grad);
+            p.drawRoundedRect(chunk, radius, radius);
+
+            // Shimmer-Highlight — nur wenn Download laeuft.
+            if (animated_) {
+                p.save();
+                QPainterPath clip;
+                clip.addRoundedRect(chunk, radius, radius);
+                p.setClipPath(clip);
+
+                const qreal band_x = shimmer_phase_ * chunk.width();
+                QLinearGradient shimmer(band_x - 70, 0, band_x + 70, 0);
+                shimmer.setColorAt(0.0, QColor(255, 255, 255,  0));
+                shimmer.setColorAt(0.5, QColor(255, 255, 255, 80));
+                shimmer.setColorAt(1.0, QColor(255, 255, 255,  0));
+                p.setPen(Qt::NoPen);
+                p.setBrush(shimmer);
+                p.drawRect(chunk);
+                p.restore();
+            }
+        }
+
+        // Prozent-Text zentriert.
+        QFont f = font();
+        f.setBold(true);
+        f.setPointSizeF(f.pointSizeF() + 0.5);
+        p.setFont(f);
+        const QString txt = QString::number(pct * 100.0, 'f', 1) + " %";
+        // Sanfter Schatten fuer bessere Lesbarkeit auf beiden Hintergruenden.
+        p.setPen(QColor(0, 0, 0, 110));
+        p.drawText(rect().adjusted(1, 1, 1, 1), Qt::AlignCenter, txt);
+        p.setPen(QColor(0xFF, 0xFF, 0xFF, 240));
+        p.drawText(rect(), Qt::AlignCenter, txt);
+    }
+
+private:
+    QTimer* shimmer_timer_ = nullptr;
+    double  shimmer_phase_ = -0.4;
+    bool    animated_       = false;
+};
 
 // ==================== L10n ==========================================
 
@@ -318,7 +413,7 @@ private:
     // action
     QPushButton* downloadBtn_;
     QPushButton* cancelBtn_;
-    QProgressBar* progressBar_;
+    AnimatedProgressBar* progressBar_;
     QLabel* progressLabel_;
 
     // log + open folder
@@ -523,21 +618,16 @@ void MainWindow::buildUi() {
     actionRow->addWidget(cancelBtn_);
     root->addLayout(actionRow);
 
-    // ---------- Progressbar + %-Label ----------
-    auto* progressRow = new QHBoxLayout();
-    progressRow->setSpacing(6);
-    progressBar_ = new QProgressBar();
+    // ---------- Progressbar (breit, mit zentrierter Prozentzahl) + Status ----------
+    progressBar_ = new AnimatedProgressBar();
     progressBar_->setRange(0, 1000);
     progressBar_->setValue(0);
-    progressBar_->setTextVisible(false);
-    progressBar_->setFixedHeight(6);
+    root->addWidget(progressBar_);
+
     progressLabel_ = new QLabel();
-    progressLabel_->setProperty("class", "subtle");
-    progressLabel_->setMinimumWidth(90);
-    progressLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    progressRow->addWidget(progressBar_, 1);
-    progressRow->addWidget(progressLabel_, 0);
-    root->addLayout(progressRow);
+    progressLabel_->setStyleSheet("color: #E6E9EE; font-size: 13px; font-weight: 500;");
+    progressLabel_->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+    root->addWidget(progressLabel_);
 
     // ---------- Bottom: Log-Toggle links, Ordner-oeffnen rechts ----------
     auto* bottomRow = new QHBoxLayout();
@@ -586,7 +676,7 @@ void MainWindow::applyStyle() {
         font-weight: 600;
     }
     QLabel[class="subtle"] {
-        color: palette(mid);
+        color: #B8BEC8;
     }
     QPushButton[class="primary"] {
         background-color: #C4302B;
@@ -640,7 +730,7 @@ void MainWindow::retranslate() {
     logToggleBtn_->setText(logToggleBtn_->isChecked() ? l.hide_log : l.show_log);
     openFolderBtn_->setText(l.open_folder);
 
-    progressLabel_->setText("0.0 %");
+    progressLabel_->setText("");
 }
 
 void MainWindow::setLanguage(Lang l) {
@@ -719,8 +809,9 @@ void MainWindow::onDownloadClicked() {
     openFolderBtn_->hide();
     logView_->clear();
     progressBar_->setValue(0);
+    progressBar_->setAnimated(true);
     progressTargetPerMille_ = 0;
-    progressLabel_->setText("0.0 %");
+    progressLabel_->setText("");
 
     QStringList args;
     int fmt = formatCombo_->currentIndex();
@@ -781,19 +872,18 @@ void MainWindow::onProcessOutput() {
             int target = int(pct * 10.0);   // 0..1000
             if (target > progressTargetPerMille_) {
                 animateProgressTo(target);
-            } else {
-                // per-fragment resets — nur label aktualisieren, bar nicht zurueckspringen.
-                progressLabel_->setText(QString::number(pct, 'f', 1) + " %");
             }
+            // Per-Fragment-Ruecksetzer ignorieren wir - Bar bleibt monoton steigend.
         }
     }
 }
 
 void MainWindow::onProcessFinished(int code, QProcess::ExitStatus) {
     setDownloading(false);
+    progressBar_->setAnimated(false);
     if (code == 0) {
         animateProgressTo(1000);
-        progressLabel_->setText("100.0 %  ·  " + QString::fromUtf8(L(lang_).done_ok));
+        progressLabel_->setText(QString::fromUtf8(L(lang_).done_ok));
         openFolderBtn_->show();
     } else {
         progressLabel_->setText(QString::fromUtf8(L(lang_).done_err) + "  (exit " + QString::number(code) + ")");
@@ -860,7 +950,6 @@ void MainWindow::animateProgressTo(int target) {
     progressAnim_->setStartValue(progressBar_->value());
     progressAnim_->setEndValue(target);
     progressAnim_->start();
-    progressLabel_->setText(QString::number(target / 10.0, 'f', 1) + " %");
 }
 
 void MainWindow::appendLog(const QString& s) {
@@ -875,6 +964,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("Easy Youtube Downloader");
     QApplication::setOrganizationName("EasyYoutubeDownloader");
+    QApplication::setWindowIcon(QIcon(":/ytdl.png"));   // Fenstertitel + Taskbar
     MainWindow w;
     w.show();
     return app.exec();

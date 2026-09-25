@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ytdl LANGUAGES CXX)
+project(ytdl VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,7 +35,19 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
-add_executable(easy_youtube_downloader WIN32 src/gui.cpp)
+# Icon-Resource: Windows Explorer + Taskbar sehen das ico ueber die .rc,
+# das Qt-Fenster laedt die PNG ueber die .qrc via setWindowIcon().
+if(WIN32 AND MINGW)
+    set(_ytdl_rc "${CMAKE_BINARY_DIR}/ytdl.rc")
+    file(WRITE "${_ytdl_rc}"
+        "1 ICON \"${CMAKE_SOURCE_DIR}/res/ytdl.ico\"\n")
+    # Wichtig: Ninja weiss sonst nicht dass .rc.obj neu muss wenn nur .ico
+    # sich aendert (Text der .rc-Datei bleibt gleich).
+    set_source_files_properties("${_ytdl_rc}" PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/res/ytdl.ico")
+endif()
+
+add_executable(easy_youtube_downloader WIN32 src/gui.cpp res/ytdl.qrc ${_ytdl_rc})
 set_target_properties(easy_youtube_downloader PROPERTIES
     OUTPUT_NAME "Easy Youtube Downloader"
 )
